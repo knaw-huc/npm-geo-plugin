@@ -35,46 +35,51 @@ export default class Geo {
             zoomOffset: -1
         }).addTo(map);
 
-
+        var wktFields = getWktFields(this.yasr.results);
         var wkt = new Wkt.Wkt();
-        for (var key in this.yasr.results.json.results.bindings) {
-            wkt.read(this.yasr.results.json.results.bindings[key].wkt.value);
-            var colorInfo = this.yasr.results.json.results.bindings[key].wktColor.value.split(",");
-            var opacity= 1;
-            if (colorInfo[1] !== undefined) {
-                opacity = colorInfo[1];
-            }
-            var feature = { "type": "Feature", 'properties': {"name": this.yasr.results.json.results.bindings[key].wktTooltip.value}, "geometry": wkt.toJson() };
-            L.geoJson(feature, {
-                style: function(feature) {
-                    return {
-                        color: "#a50026",
-                        radius:8,
-                        weight: 0,
-                        opacity: 1,
-                        fillOpacity: opacity
-                    };
-                },
-                pointToLayer: function(feature, latlng) {
-                    return new L.CircleMarker(latlng, {
-                        radius: 10,
-                        fillOpacity: 0.85
-                    });
+        for (var fieldKey in wktFields) {
+            var field = wktFields[fieldKey];
+            for (var key in this.yasr.results.json.results.bindings) {
+                wkt.read(this.yasr.results.json.results.bindings[key][field].value);
+                var colorInfo = [];
+                var opacity = 1;
+                var color = getColor(key);
+                if (this.yasr.results.json.results.bindings[key][field + "Color"] !== undefined) {
+                    colorInfo = this.yasr.results.json.results.bindings[key][field + "Color"].value.split(",");
+                    color = colorInfo[0];
+                    if (colorInfo[1] !== undefined) {
+                        opacity = colorInfo[1];
+                    }
                 }
-            }).bindTooltip(function (layer) {
-                return layer.feature.properties.name; }
-            ).addTo(map);
+                //var feature = { "type": "Feature", 'properties': {"name": this.yasr.results.json.results.bindings[key].wktTooltip.value}, "geometry": wkt.toJson() };
+                var feature = constructFeature(this.yasr.results.json.results.bindings[key], field, wkt.toJson());
+                L.geoJson(feature, {
+                    style: function(feature) {
+                        return {
+                            color: color,
+                            radius:8,
+                            weight: 0,
+                            opacity: 1,
+                            fillOpacity: opacity
+                        };
+                    },
+                    pointToLayer: function(feature, latlng) {
+                        return new L.CircleMarker(latlng, {
+                            radius: 10,
+                            fillOpacity: 0.85
+                        });
+                    }
+                }).bindTooltip(function (layer) {
+                    return layer.feature.properties.name; }
+                ).addTo(map);
+            }
         }
-
-
-
     }
 
     // A required function, used to indicate whether this plugin can draw the current
     // resultset from yasr
     canHandleResults() {
-        const vars = this.yasr.results.getVariables();
-        return !!this.yasr.results && vars.includes("wkt");
+        return this.yasr.results && hasWktType(this.yasr.results);
     }
     // A required function, used to identify the plugin, works best with an svg
     getIcon() {
@@ -103,5 +108,52 @@ function createMapID() {
         varName = 'map_' + i.toString();
     }
     return varName;
+}
+
+function hasWktType(results) {
+    const vars = results.getVariables();
+    let hasWkt = false;
+    vars.map((field) => {
+        if (results.json.results.bindings[0][field].datatype !== undefined && results.json.results.bindings[0][field].datatype.indexOf('wktLiteral') > -1) {
+            hasWkt = true;
+        }
+    });
+    return hasWkt;
+}
+
+function getWktFields(results) {
+    const vars = results.getVariables();
+    let wktFields = [];
+
+    vars.map((field) => {
+        if (results.json.results.bindings[0][field].datatype !== undefined && results.json.results.bindings[0][field].datatype.indexOf('wktLiteral') > -1) {
+            wktFields.push(field);
+        }
+    });
+    return wktFields;
+}
+
+function getColor(key) {
+    const colors = [
+        'rgb(0, 102, 0)',
+        'rgb(204, 0, 0)',
+        'rgb(0, 0, 153)',
+        'rgb(102, 102, 0)',
+        'rgb(204, 204, 0)',
+        'rgb(204, 0, 102)',
+        'rgb(175, 92, 96)'
+    ];
+    return colors[key % 7];
+}
+
+function constructFeature(record, fieldName, geoStruc) {
+    var props = {};
+    if (record[fieldName + 'Tooltip'] !== undefined) {
+        props.name = record[fieldName + 'Tooltip'].value;
+    }
+    if (record[fieldName + 'Label'] !== undefined) {
+        props.popupContent = record[fieldName + 'Label'].value;
+    }
+    return { "type": "Feature", "properties": props, "geometry": geoStruc };
 }
 
